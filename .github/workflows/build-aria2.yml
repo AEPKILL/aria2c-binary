@@ -123,19 +123,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          repository: aria2/aria2
-          fetch-depth: 0
-
-      - name: Get latest release tag
-        id: get_tag
-        run: |
-          git fetch --tags
-          echo "RELEASE_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
-
-      - name: Checkout latest release
-        run: git checkout ${{ steps.get_tag.outputs.RELEASE_TAG }}
-
+      
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -145,6 +133,7 @@ jobs:
       - name: Build Aria2 for ${{ matrix.arch }}
         run: |
           docker buildx build --platform linux/${{ matrix.arch }} \
+            -f ${GITHUB_WORKSPACE}/Dockerfile.linux \
             -f ${GITHUB_WORKSPACE}/Dockerfile.linux \
             --output "type=local,dest=./output" \
             --build-arg TARGETARCH=${{ matrix.arch }} .
