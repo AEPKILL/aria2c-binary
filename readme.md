@@ -13,9 +13,8 @@ This project provides aria2c binary files for the following platform:
   - [x] x64
   - [x] arm64
 - linux
-  - [x] x86
+  - [x] x64
   - [x] arm64
-  - [x] arm32v7
 
 ## relate
 
