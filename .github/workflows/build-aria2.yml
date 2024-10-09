@@ -1,0 +1,195 @@
+name: Build and Release Aria2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86, x86_64]
+
+    steps:
+      - name: Checkout aria2 repository
+        uses: actions/checkout@v4
+        with:
+          repository: aria2/aria2
+          fetch-depth: 0
+
+      - name: Get latest release tag
+        id: get_tag
+        run: |
+          git fetch --tags
+          echo "RELEASE_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+
+      - name: Checkout latest release
+        run: git checkout ${{ steps.get_tag.outputs.RELEASE_TAG }}
+
+      - name: Update GMP download URL in Dockerfile.mingw
+        run: |
+          sed -i 's|https://gmplib.org/download/gmp/gmp-\([0-9.]\+\).tar.xz|https://mirrors.kernel.org/gnu/gmp/gmp-\1.tar.xz|g' Dockerfile.mingw
+
+      - name: Update zlib download URL in Dockerfile.mingw
+        run: |
+          sed -i 's|https://www.zlib.net/zlib-\([0-9.]\+\).tar.gz|https://github.com/madler/zlib/releases/download/v\1/zlib-\1.tar.gz|g' Dockerfile.mingw
+
+      - name: Update c-ares download URL in Dockerfile.mingw
+        run: |
+          sed -i 's|https://c-ares.org/download/c-ares-\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)\.tar.gz|https://github.com/c-ares/c-ares/releases/download/cares-\1_\2_\3/c-ares-\1.\2.\3.tar.gz|g' Dockerfile.mingw
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Aria2
+        run: |
+          docker build  -t aria2-mingw-build-${{matrix.arch}} -f Dockerfile.mingw --build-arg HOST=${{matrix.arch == 'x86' && 'i686-w64-mingw32' || 'x86_64-w64-mingw32'}} .
+          docker create --name aria2-mingw-build-${{matrix.arch}} aria2-mingw-build-${{matrix.arch}}
+          docker cp aria2-mingw-build-${{matrix.arch}}:/aria2/src/aria2c.exe aria2-windows-${{ matrix.arch }}.exe
+          docker rm aria2-mingw-build-${{matrix.arch}}
+
+      - name: Compress artifact
+        run: |
+          7z a aria2-windows-${{ matrix.arch }}.zip ./aria2-windows-${{ matrix.arch }}.exe
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2-windows-${{ matrix.arch }}
+          path: aria2-windows-${{ matrix.arch }}.zip
+          retention-days: 1
+
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: macos-13
+          - arch: arm64
+            runs-on: macos-latest
+
+    runs-on: ${{ matrix.runs-on }}
+
+    steps:
+      - name: Checkout aria2 repository
+        uses: actions/checkout@v4
+        with:
+          repository: aria2/aria2
+          fetch-depth: 0
+
+      - name: Get latest release tag
+        id: get_tag
+        run: |
+          git fetch --tags
+          echo "RELEASE_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+
+      - name: Checkout latest release
+        run: git checkout ${{ steps.get_tag.outputs.RELEASE_TAG }}
+
+      - name: Setup build environment
+        run: |
+          brew install cppunit gettext openssl libssh2 c-ares sqlite3 \
+            autoconf automake pkg-config libtool
+
+      - name: Configure and build
+        run: |
+          autoreconf -i
+          ./configure \
+            --without-openssl --without-gnutls --with-appletls \
+            --disable-nls \
+            CC=clang \
+            CXX=clang++ \
+            CFLAGS="-O3 -DNDEBUG -target ${{ matrix.arch }}-apple-darwin" \
+            CXXFLAGS="-O3 -DNDEBUG -target ${{ matrix.arch }}-apple-darwin" \
+            LDFLAGS="-O3 -DNDEBUG -target ${{ matrix.arch }}-apple-darwin"
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Compress artifact
+        run: |
+          tar -czf aria2-macos-${{ matrix.arch }}.tar.gz ./src/aria2c
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2-macos-${{ matrix.arch }}
+          path: aria2-macos-${{ matrix.arch }}.tar.gz
+          retention-days: 1
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64, arm32v7]
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: aria2/aria2
+          fetch-depth: 0
+
+      - name: Get latest release tag
+        id: get_tag
+        run: |
+          git fetch --tags
+          echo "RELEASE_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+
+      - name: Checkout latest release
+        run: git checkout ${{ steps.get_tag.outputs.RELEASE_TAG }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Aria2 for ${{ matrix.arch }}
+        run: |
+          docker buildx build --platform linux/${{ matrix.arch }} \
+            -f ${GITHUB_WORKSPACE}/Dockerfile.linux \
+            --output "type=local,dest=./output" \
+            --build-arg TARGETARCH=${{ matrix.arch }} .
+
+      - name: Compress artifact
+        run: |
+          mkdir -p ./artifacts
+          mv ./output/aria2c ./artifacts/aria2c-linux-${{ matrix.arch }}
+          cd ./artifacts
+          tar -czvf aria2-linux-${{ matrix.arch }}.tar.gz aria2c-linux-${{ matrix.arch }}
+          rm aria2c-linux-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2-linux-${{ matrix.arch }}
+          path: ./artifacts/aria2-linux-${{ matrix.arch }}.tar.gz
+          retention-days: 1
+
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Get latest release tag
+        id: get_tag
+        run: |
+          echo "RELEASE_TAG=$(curl -s https://api.github.com/repos/aria2/aria2/releases/latest | jq -r .tag_name)" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        with:
+          tag_name: ${{ steps.get_tag.outputs.RELEASE_TAG }}
+          name: Aria2 ${{ steps.get_tag.outputs.RELEASE_TAG }}
+          draft: false
+          prerelease: false
+          files: |
+            ./aria2-windows-x86/aria2-windows-x86.zip
+            ./aria2-windows-x86_64/aria2-windows-x86_64.zip
+            ./aria2-macos-x86_64/aria2-macos-x86_64.tar.gz
+            ./aria2-macos-arm64/aria2-macos-arm64.tar.gz
+            ./aria2-linux-amd64/aria2-linux-amd64.tar.gz
+            ./aria2-linux-arm64/aria2-linux-arm64.tar.gz
+            ./aria2-linux-arm32v7/aria2-linux-arm32v7.tar.gz
