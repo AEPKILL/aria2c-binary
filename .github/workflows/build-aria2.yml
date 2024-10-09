@@ -119,11 +119,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, arm64, arm32v7]
+        arch: [amd64, arm64, arm]
 
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -181,4 +181,4 @@ jobs:
             ./aria2-macos-arm64/aria2-macos-arm64.tar.gz
             ./aria2-linux-amd64/aria2-linux-amd64.tar.gz
             ./aria2-linux-arm64/aria2-linux-arm64.tar.gz
-            ./aria2-linux-arm32v7/aria2-linux-arm32v7.tar.gz
+            ./aria2-linux-arm32v7/aria2-linux-arm.tar.gz
