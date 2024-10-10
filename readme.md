@@ -1,25 +1,27 @@
 # ariac2-binary
 
-Provide Aria2c multi-platform binary files
+Aria2c multi-platform binary files
 
-## description
+## Description
 
-This project provides aria2c binary files for the following platform:
+This project provides aria2c binary files for the following platforms:
 
-- windows
-  - [x] x86
-  - [x] x64
+- Windows
+  - x86
+  - x64
 - macOS
-  - [x] x64
-  - [x] arm64
-- linux
-  - [x] x64
-  - [x] arm64
+  - x64
+  - arm64
+- Linux
+  - x64
+  - arm64
 
-## relate
+This project was created because the official Aria2 repository does not provide binary files for all versions of Linux and macOS.
+
+## Related Project
 
 [Aria2](https://github.com/aria2/aria2)
 
-## license
+## License
 
 MIT © [AEPKILL](mailto:a@aepkill.com)
